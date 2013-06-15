@@ -1,0 +1,41 @@
+CHUNKENIZER(1)
+==============
+Daniele Pezzini <hyouko@gmail.com>
+v0.1, May 2013
+:doctype: manpage
+
+NAME
+----
+chunkenizer - A simple bash script to split Mallard files generated with AsciiDoc with attribute 'chunked'
+
+SYNOPSIS
+--------
+*chunkenizer* ['OPTIONS'] 'FILE' ['OUTPUT_DIRECTORY']
+
+DESCRIPTION
+-----------
+*chunkenizer* splits Mallard file 'FILE' generated with AsciiDoc with attribute 'chunked' and puts the resulting files in 'OUTPUT_DIRECTORY'.
+
+IMPORTANT: 'OUTPUT_DIRECTORY' must be an *EMPTY* directory you have read/write access to.
+
+If 'OUTPUT_DIRECTORY' isn't given, *chunkenizer* will put split files in a subdirectory named *_chunked_*.
+
+*chunkenizer* will also create nextprev and parent-children links and it'll adjust cross reference links.
+
+OPTIONS
+-------
+*-h, --help*::
+Show a brief help message summarizing *chunkenizer* options and syntax.
+
+*--yelp*::
+Same-page cross reference links workaround for Gnome's Yelp: also cross links towards same page's sections will have page's name [e.g.: page#sect]
+
+AUTHOR
+------
+Daniele Pezzini <hyouko@gmail.com>
+
+COPYING
+-------
+Copyright \(C) 2013 Daniele Pezzini.
+Free use of this software is granted under the terms of the MIT License (MIT).
+

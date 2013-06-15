@@ -1,0 +1,255 @@
+Mallard backend for AsciiDoc
+============================
+Daniele Pezzini <hyouko@gmail.com>
+v0.1, May 2013
+
+Introduction
+------------
+Mallard backend is a configuration file for Stuart Rackham's http://asciidoc.org/[AsciiDoc].
+It generates http://projectmallard.org/[Mallard] markup from AsciiDoc documents.
+
+Installation
+------------
+----
+asciidoc --backend install mallard.zip
+----
+To remove this backend:
+
+----
+asciidoc --backend remove mallard
+----
+
+Backend specific features
+-------------------------
+Since Mallard lacks some of the features other AsciiDoc backends offer to you, some workaround has to be used to implement some useful functions (<<SH,soure highlighting>>, <<M,math>>, <<FN,footnotes>>, <<XR,cross references>>) while other are simply ignored by this backend (<<ST,style>>). +
+
+
+IMPORTANT: If you want to use this backend to generate chunked files, sections' name or id can't be 'index': id is used to name files and 'index' is already utilised as name of the page that will be the root of all chunked files.
+
+[[SH]]
+Source highlighting
+~~~~~~~~~~~~~~~~~~~
+Mallard's `<code>` element with a proper `mime` attribute will highlight code according to its value. +
+In order to keep this backend compatible with other backends the source code block's languages already available in this backend are: +
+_java_, _delphi_, _pascal_, _ini_, _php_, _myxml_, _m2_, _tcl_, _c_, _cpp_, _csharp_, _python_, _ruby_, _perl_, _javascript_, _bourne_, _css_, _css21_, _cmake_, _upc_, _lua_, _sql92_, _sql1999_, _sql2003_ and _sql_.
+
+[[ST]]
+Style
+~~~~~
+Mallard doesn't come out of the box with complex styling features interpreters should adhere to. +
+If you want to style text (color, size, ..), tables and so on, you have to use Mallard's style attribute.
+____
+The style attribute takes a space-separated list of style hints. Processing tools should adjust their behavior according to those style hints they understand.
+____
+
+Because style relies on processing tools, as of right now, those style hints, are simply ignored by this backend.
+
+[[M]]
+Subscript/superscript & math
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Mallard doesn't have subscript, superscript and math-ability, so this backend renders them as plain text. +
+Instead you should use MathML with its external namespace in a passthrough macro or block. Here's a couple of examples:
+
+.Passthrough macro example
+----
+\ifdef::basebackend-mallard[]
+pass:[<math xmlns="http://www.w3.org/1998/Math/MathML">
+	<mrow>
+		<mi>x</mi>
+		<mo>=</mo>
+		<mfrac>
+			<mrow>
+				<mrow>
+					<mo>-</mo>
+					<mi>b</mi>
+				</mrow>
+				<mo>±</mo>
+				<msqrt>
+					<mrow>
+						<msup>
+							<mi>b</mi>
+							<mn>2</mn>
+						</msup>
+						<mo>-</mo>
+						<mrow>
+							<mn>4</mn>
+							<mo>&#x02062;</mo>
+							<mi>a</mi>
+							<mo>&#x02062;</mo>
+							<mi>c</mi>
+						</mrow>
+					</mrow>
+				</msqrt>
+			</mrow>
+			<mrow>
+				<mn>2</mn>
+				<mo>&#x02062;</mo>
+				<mi>a</mi>
+			</mrow>
+		</mfrac>
+	</mrow>
+</math>]
+\endif::basebackend-mallard[]
+----
+
+.Passthrough block example
+----
+\ifdef::basebackend-mallard[]
+++++
+<math xmlns="http://www.w3.org/1998/Math/MathML">
+	<mrow>
+		<mi>x</mi>
+		<mo>=</mo>
+		<mfrac>
+			<mrow>
+				<mrow>
+					<mo>-</mo>
+					<mi>b</mi>
+				</mrow>
+				<mo>±</mo>
+				<msqrt>
+					<mrow>
+						<msup>
+							<mi>b</mi>
+							<mn>2</mn>
+						</msup>
+						<mo>-</mo>
+						<mrow>
+							<mn>4</mn>
+							<mo>&#x02062;</mo>
+							<mi>a</mi>
+							<mo>&#x02062;</mo>
+							<mi>c</mi>
+						</mrow>
+					</mrow>
+				</msqrt>
+			</mrow>
+			<mrow>
+				<mn>2</mn>
+				<mo>&#x02062;</mo>
+				<mi>a</mi>
+			</mrow>
+		</mfrac>
+	</mrow>
+</math>
+++++
+\endif::basebackend-mallard[]
+----
+
+[[FN]]
+Footnotes
+~~~~~~~~~
+Mallard doesn't have footnotes, so this backend render them 'inline' like this:
+
+`footnote:[<text>]`::
+[_<text>_&#93;
+
+`footnoteref:[<id>,<text>]`::
+[*id*. _<text>_&#93;
+
+`footnoteref:[<id>]`::
+[-> *id*&#93;
+
+[[XR]]
+Internal cross references
+~~~~~~~~~~~~~~~~~~~~~~~~~
+In Mallard only sections will generate an anchor. +
+So, if you want to use cross reference links, you have to give every section an unique id and then use that id to link to it.
+
+.Cross reference usage example
+[listing]
+--
+[[unique_id]]
+My fabulous section
+-------------------
+Nel mezzo del cammin di nostra vita +
+mi ritrovai per una selva oscura, +
+ché la diritta via era smarrita.
+
+ ...
+
+Uh-oh! I want to link to that fabulous <<unique_id,section>>!
+--
+
+Options
+-------
+Apart from other AsciiDoc attributes, Mallard document generation is influenced by the following attributes:
+
+chunked[='LEVEL']::
++
+--
+If _chunked_ attribute is used, Mallard documents will be split up in pages according to its level (see <<E,Examples>>). +
+
+IMPORTANT: If you want to use this backend to generate chunked files, sections' name or id can't be 'index': id is used to name files and 'index' is already utilised as name of the page that will be the root of all chunked files.
+
+Available levels are:
+
+[cols="s,",options="autowidth",frame="topbot"]
+|====
+|1|Section level 1
+|2|Section level 2
+|3|Section level 3
+|4|Section level 4
+|s|Synopsis section (only manpage documents)
+|====
+
+If _chunked_ attribute is used wihout a 'LEVEL' the backend will use a 'LEVEL' of '1234' (all sections, apart from synopsis, will be split up in new pages)
+
+IMPORTANT: The file generated with attribute _chunked_ needs to be further massaged by *chunkenizer(1)* bash script, so that it can be split up in different files and undergo some other small adjustments.
+--
+
+toc::
+Put a table of content in the main page (only of level1 sections) and in each sections (only of direct children sections).
+
+yelp::
+Same-page cross reference links workaround for Gnome's Yelp: also cross links towards same page's sections will have page's name [e.g.: page#sect]
+(Not chunked only, for chunked documents the workaround is handled by *chunkenizer(1)*) +
+
+[[E]]
+Examples
+--------
+Split up all the document's sections (apart from _synopsis_) in new pages:
+
+----
+asciidoc -b mallard -a chunked INPUTFILE
+----
+
+Split only section of level 1:
+
+----
+asciidoc -b mallard -a chunked=1 INPUTFILE
+----
+
+Split section 1 and 3:
+
+----
+asciidoc -b mallard -a chunked=13 INPUTFILE
+----
+
+Split all document's sections _and_ synopsis:
+
+----
+asciidoc -b mallard -a chunked=1234s INPUTFILE
+----
+
+Split section of level 1 and synopsis:
+
+----
+asciidoc -b mallard -a chunked=1s INPUTFILE
+----
+
+Yelp workaround:
+
+----
+asciidoc -b mallard -a yelp INPUTFILE
+----
+
+
+Author
+------
+Daniele Pezzini <hyouko@gmail.com>
+
+Copying
+-------
+Copyright (C) 2013 Daniele Pezzini.
+Free use of this software is granted under the terms of the MIT License (MIT).

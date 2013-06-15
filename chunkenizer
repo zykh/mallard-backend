@@ -1,0 +1,390 @@
+#!/usr/bin/env bash
+#
+# chunkenizer - A simple script to split Mallard files generated with AsciiDoc with attribute 'chunked'
+#
+# Copyright (C)
+#   2013 - Daniele Pezzini <hyouko@gmail.com>
+#
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation
+# files (the "Software"), to deal in the Software without
+# restriction, including without limitation the rights to use,
+# copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following
+# conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+# OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+#
+
+# help
+function help () {
+	echo "chunkenizer - A simple script to split Mallard files generated with AsciiDoc with attribute 'chunked'"
+	echo "  usage: $0 [--yelp] input_file [output_directory]"
+	echo "         $0 {-h --help}"
+	echo "  options:"
+	echo "    -h, --help    Show this help message"
+	echo "        --yelp    Same-page cross reference links workaround for Gnome's Yelp"
+	echo "IMPORTANT: output_directory must be an EMPTY directory you have read/write access to, or you can let chunkenizer create it"
+}
+
+# no input file
+if [[ -z "$1" ]]; then
+	help
+	exit
+fi
+
+# help requested
+if [[ "$1" = "-h" ]] || [[ "$1" = "--help" ]]; then
+	help
+	exit
+fi
+
+# yelp workaround
+yelp=0
+if [[ "$1" = "--yelp" ]]; then
+	if [[ -z "$2" ]]; then
+		help
+		exit
+	fi
+	yelp=1
+fi
+
+# input file
+if ((yelp)); then
+	inputfile="$2"
+	# output directory not given -> chunked
+	if [[ -z "$3" ]]; then
+		outdir="./chunked/"
+	else
+		outdir="$3"
+	fi
+else
+	inputfile="$1"
+	# output directory not given -> chunked
+	if [[ -z "$2" ]]; then
+		outdir="./chunked/"
+	else
+		outdir="$2"
+	fi
+fi
+
+# input file doesn't exist
+if [[ ! -f "$inputfile" ]]; then
+    echo "Input file [$inputfile] not found - Aborting"
+    exit
+fi
+
+# removing trailing slash from output directory
+outdir=${outdir%/}
+
+# page name, 'index' for first page
+page="index"
+
+# making output directory
+mkdir -p "$outdir" || { echo "ERROR! Unable to create output directory [$outdir]"; exit; }
+# check whether outdir is empty or not
+if [[ $(find "$outdir" -maxdepth 0 ! -empty) ]]; then
+	echo "ERROR! Output directory [$outdir] is not empty"
+	exit
+fi
+# temp directory
+mkdir -p "$outdir/tmp" || { echo "ERROR! Unable to create temp directory [$outdir/tmp]"; exit; }
+
+echo -n "Processing document: $inputfile [ ]"
+
+# progress spinner
+i=1
+sp="/-\|";
+
+# gramps: try and find page/sections family tree
+#  $1 -> parent's page/section number {0,1,2,3}
+function gramps () {
+	# sect1/page1 -> sect3/page3
+	if (( $1 > 0 )); then
+		# parent's name
+		local parents=$(grep "<section$1" "$buffer" | tail -1)
+		# parent's type
+		local left
+		# type: section
+		if [[ $parents && ${parents-x} ]]; then
+			left="section"
+		# type: page
+		else
+			parents=$(grep "<page$1" "$buffer" | tail -1)
+			left="page"
+		fi
+		# get id
+		parents=${parents#<$left$1*id=\"}
+		parents=${parents%%\">*}
+		# if parent is a section -> search gramps
+		if [[ "$left" = "section" ]]; then
+			# if parent is already set (so it was already a section), preserve it:
+			# eg: <page1><section2><section3><page4>
+			# -> what we want is: page1id#section3id NOT page1id#section2id#section3id ..
+			if [[ ! $parent && ! ${parent-x} ]]; then
+				parent="$parents"
+			fi
+			# search parent's parent
+			gramps $(( $1-1 ))
+		# if parent is a page -> we have what we need (pageid)
+		else
+			# if parent is already set (so it was a section) -> pageid#sectionid
+			if [[ $parent && ${parent-x} ]]; then
+				parent="$parents#$parent"
+			# else -> pageid
+			else
+				parent="$parents"
+			fi
+		fi
+	# sect0 -> index
+	else
+		# if parent is already set (so it was a section) -> index#sectionid
+		if [[ $parent && ${parent-x} ]]; then
+			parent="index#$parent"
+		# else -> index
+		else
+			parent="index"
+		fi
+	fi
+}
+
+# checknsplit: check whether or not the inputfile contains the page[1-4] and then create new files accordingly
+#  $1 -> page number {1,2,3,4}
+function checknsplit () {
+	# begin: an array of the line numbers where each page begins
+	local begin=()
+	# pages: an array of pages' names
+	local pages=()
+	while read; do
+		begin+=($(cut -f1 -d: <<<"$REPLY"))
+		local page=${REPLY#*:<page*\ xmlns=\"http://projectmallard\.org/1\.0/\"\ type=\"*\"\ id=\"}
+		page=${page%%\">*}
+		pages+=("$page")
+	done < <(grep -n "<page$1 xmlns=\"http://projectmallard\.org/1\.0/\" type=\"\(topic\|guide\)\" id=\"" "$tmp")
+
+	# no pageN (N = $1) found -> don't do anything
+	if [[ $begin && ${begin-x} ]]; then
+		# end: an array of the line numbers where each page ends
+		local end=()
+		while read; do
+			end+=("$REPLY")
+		done < <(grep -n "</page$1>" "$tmp" | cut -f1 -d:)
+
+		# mmh.. not equal number of <pageN and </pageN> (N = $1)
+		if [[ ${#begin[@]} -ne ${#end[@]} ]]; then
+			printf "\b\bERROR] - sect$1 not evenly matched\n"
+			exit
+		fi
+
+		# array index
+		local j=0
+
+		# buffer will contain what isn't nested in all <pageN ..</pageN> (N = $1)
+		local buffer="$outdir/tmp/buffer.tmp"
+
+		local bn
+		for bn in "${begin[@]}"; do
+			# creating page
+			sed -e "$bn,${end[$j]}!d" -e "s/<page$1/<page/" -e "s/<\/page$1>/<\/page>/" "$tmp" > "$outdir/${pages[$j]}.page"
+
+			# progress spinner
+			printf "\b\b${sp:i++%${#sp}:1}]";
+
+			# buffer
+			if (( j == 0 )); then
+				head -n $(( bn - 1 )) "$tmp" > "$buffer"
+			else
+				local start=$(( end[j-1] + 1 ))
+				local finish=$(( bn - 1 ))
+				if (( start < finish )); then
+					sed "$start,$finish!d" "$tmp" >> "$buffer"
+				fi
+			fi
+
+			# add xref links between children and parents
+			local parent=
+			gramps $(( $1 - 1 ))
+			# add link to pages and adjust sectionN -> section
+			sed -i -e "s/<\/info>/<link type=\"guide\" xref=\"$parent\"\/>\n<\/info>/" -e "s/<section.\? id=\"/<section id=\"/g" "$outdir/${pages[$j]}.page"
+			unset parent
+
+			# array index counter
+			(( j++ ))
+		done
+
+		# buffer, till the end of $tmp
+		tail -n +$(( end[j-1] + 1 )) "$tmp" >> "$outdir/tmp/buffer.tmp"
+
+		mv "$buffer" "$tmp"
+
+		# status flag
+		(( ok++ ))
+
+	fi
+}
+
+# status flag
+ok=0
+
+# copying inputfile in temp file
+tmp="$outdir/tmp/index.tmp"
+cp "$inputfile" "$tmp"
+
+# unnesting pages
+for j in {4..1}; do
+	checknsplit "$j"
+done
+
+# mmh.. the file doesn't have any <pageN
+if ((!ok)); then
+	printf "\b\bERROR] - The file doesn't appear to be a valid chunked AsciiDoc-Mallard\n"
+	exit
+fi
+
+# all's well -> store index
+mv "$tmp" "$outdir/index.page"
+rmdir "$outdir/tmp"
+
+# sectionN -> section & page0 -> page in index.page
+sed -i -e "s/<section.\? id=\"/<section id=\"/g" -e "s/<page0/<page/" "$outdir/index.page"
+
+# xref links/prevnext links
+# sections
+sections=()
+# level {0,1,2,3,4} of page/section
+level=()
+# all id of page/section ordered from top to bottom
+all=()
+# type {page,section}
+type=()
+
+# let's get 'em all
+while read; do
+	typebuf=${REPLY#<}	# typebuf=page/page1 http.. | section1/2 id=..
+	typebuf=${typebuf%% *}	# typebuf=page/page1 | section1/2
+	levelbuf=${typebuf##*[[:alpha:]]}	# levelbuf=0/1/2/3/4
+	level+=("$levelbuf")
+	typebuf=${typebuf%[[:digit:]]}	# typebuf=page | section
+	type+=("$typebuf")
+	# section
+	if [[ "$typebuf" = "section" ]]; then
+		section=${REPLY#<section[[:digit:]]\ id=\"}
+		section=${section%%\">*}
+		sections+=("$section")
+		all+=("$section")
+	# page
+	else
+		page=${REPLY#<page[[:digit:]]\ xmlns=\"http://projectmallard\.org/1\.0/\"\ type=\"*\"\ id=\"}
+		page=${page%%\">*}
+		all+=("$page")
+	fi
+done < <(grep "\(<section.\? id=\"\|<page.\? xmlns=\"http://projectmallard\.org/1\.0/\" type=\"\(guide\|topic\)\" id=\"\)" "$inputfile")
+
+# adjust xref links
+# if sections is unset -> inputfile is 'completely chunked' -> each section has been marked has a page
+if [[ $sections && ${sections-x} ]]; then
+	for sect in "${sections[@]}"; do
+		# let's find section's page
+		parent=$(grep -H "<section id=\"$sect\">" "$outdir"/*.page | cut -f1 -d:)
+		# removing extension
+		parent=${parent%\.page}
+		# removing path
+		parent=${parent##*/}
+
+		# ..and adjust cross reference links
+		# yelp workaround -> also same-page xref links have page's name (e.g. page#sect)
+		if ((yelp)); then
+			find $outdir -type f -name "*.page" -exec sed -i "s/<link\ xref=\"$sect\"/<link\ xref=\"$parent#$sect\"/g" {} \; || { printf "\b\bERROR] - Error while adjusting cross reference links\n"; exit; }
+		# standard behaviour -> only xref links towards different pages have page's name
+		else
+			# other page's xref
+			find $outdir -type f ! -name "$parent.page" -name "*.page" -exec sed -i "s/<link\ xref=\"$sect\"/<link\ xref=\"$parent#$sect\"/g" {} \; || { printf "\b\bERROR] - Error while adjusting cross reference links\n"; exit; }
+			# same page's xref
+			sed -i "s/<link\ xref=\"$sect\"/<link\ xref=\"#$sect\"/g" "$outdir/$parent.page" || { printf "\b\bERROR] - Error while adjusting cross reference links\n"; exit; }
+		fi
+
+		# progress spinner
+		printf "\b\b${sp:i++%${#sp}:1}]";
+	done
+fi
+
+# prevnext link
+# (last page (n-1) doesn't need a next link)
+for ((n=0; n<${#all[@]}-1; n++)); do
+	# all[n] type = page
+	if [[ "${type[$n]}" = "page" ]]; then
+		# get n of next item
+		# -> we want pages with, at most, level=level[n]+1
+		#	eg. page2 can link to page2 (same level [eg. 14.1 -> 14.2])
+		#	    page2 can link to page1 [eg. 14.1 -> 15]
+		#	    page2 can link to page3 (children [eg. 14.1 -> 14.1.1])
+		#	    page2 can't link to page4 (grandchildren 14.1 not to 14.1.1.1)
+		#    or sections that are not children of current page (-> level < level[n])
+		#	eg. page2 can link to sect1 (same level of page's parent [eg. 14.1 -> 15])
+		#	    page3 can link to sect1 [eg. 14.1.1 -> 15]
+		#	    ...
+		#	    page3 can't link to sect4 (page3's children [eg. 14.1.1 not to 14.1.1.1]
+		for ((j=$n+1; j<${#all[@]}; j++)); do
+			if [[ "${type[$j]}" = "page" && ${level[j]} -le $(( ${level[n]}+1 )) ]] || [[ "${type[$j]}" = "section" && (( ${level[j]} < ${level[n]} )) ]]; then
+				break
+			fi
+		done
+
+		# if a valid next item isn't found -> j=${#all[@]}
+		if (( j < ${#all[@]} )); then
+			# next item is a page
+			if [[ "${type[$j]}" = "page" ]]; then
+				sed -i "s/^<\/info>/<link type=\"next\" xref=\"${all[$j]}\"\/>\n<\/info>/" "$outdir/${all[$n]}.page"
+			# next item is a section (eg. </page4><section3>)
+			else
+				# find section's page -> the first page with a level < level of section
+				z=$(( j - 1 ))
+				until [[ "${type[$z]}" = "page" ]] && (( ${level[z]} < ${level[j]} )); do
+					(( z-- ))
+				done
+				# next link
+				sed -i "s/^<\/info>/<link type=\"next\" xref=\"${all[$z]}#${all[$j]}\"\/>\n<\/info>/" "$outdir/${all[$n]}.page"
+			fi
+		fi
+	# all[i] type = section
+	else
+		# get n of next item
+		# -> we want only the first child page -> with level=level[n]+1
+		#	eg. sect2 can link to page3 [eg. 14.1 -> 14.1.1]
+		j=$(( n + 1 ))
+		while (( ${level[$n]} < ${level[$j]} )); do
+			# next link only if next item is a page
+			if [[ "${type[$j]}" = "page" ]] && (( ${level[$n]} == (${level[$j]} - 1) )); then
+				# find section's page -> the first page with a level < level of section
+				z=$(( n - 1 ))
+				until [[ "${type[$z]}" = "page" ]] && (( ${level[z]} < ${level[n]} )); do
+					(( z-- ))
+				done
+				# next link
+				sed -i "s/^<section id=\"${all[$n]}\">/<section id=\"${all[$n]}\">\n<info>\n<link type=\"next\" xref=\"${all[$j]}\"\/>\n<\/info>/" "$outdir/${all[$z]}.page"
+				break
+			fi
+			(( j++ ))
+		done
+	fi
+	# progress spinner
+	printf "\b\b${sp:i++%${#sp}:1}]";
+done
+
+# progress spinner closing and new line
+printf "\b\bDONE]\n"
+# output directory
+echo "Chunked files can be found in the directory: "$(realpath "$outdir")
+exit
+
