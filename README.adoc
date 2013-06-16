@@ -157,11 +157,10 @@ In Mallard only sections will generate an anchor. +
 So, if you want to use cross reference links, you have to give every section an unique id and then use that id to link to it.
 
 .Cross reference usage example
-[listing]
---
+----
 [[unique_id]]
 My fabulous section
--------------------
+~~~~~~~~~~~~~~~~~~~
 Nel mezzo del cammin di nostra vita +
 mi ritrovai per una selva oscura, +
 ché la diritta via era smarrita.
@@ -169,7 +168,7 @@ ché la diritta via era smarrita.
  ...
 
 Uh-oh! I want to link to that fabulous <<unique_id,section>>!
---
+----
 
 Options
 -------
@@ -184,7 +183,7 @@ IMPORTANT: If you want to use this backend to generate chunked files, sections' 
 
 Available levels are:
 
-[cols="s,",options="autowidth",frame="topbot"]
+[cols="s,<",options="autowidth",frame="topbot"]
 |====
 |1|Section level 1
 |2|Section level 2
